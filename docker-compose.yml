@@ -1,0 +1,101 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        - DEV=true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ngoconnect:/app
+      - dev-static-data:/vol/web
+      - ./logs:/var/log
+    command: >
+      sh -c "python manage.py wait_for_db && 
+             sleep 3 &&
+             python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=devdb
+      - DB_USER=devuser
+      - DB_PASS=ngoconnect_db_pass
+      - DEBUG=1
+      - FRONTEND_URL=${FRONTEND_URL}
+      - POSTMARK_API_KEY=${POSTMARK_API_KEY}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  celery:
+    build:
+      context: .
+      args:
+        - DEV=true
+    volumes:
+      - ./ngoconnect:/app
+      - ./logs:/var/log
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             sleep 5 &&
+             celery -A ngoconnect worker -l info"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=devdb
+      - DB_USER=devuser
+      - DB_PASS=ngoconnect_db_pass
+      - DEBUG=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  celery-beat:
+    build:
+      context: .
+      args:
+        - DEV=true
+    volumes:
+      - ./ngoconnect:/app
+      - ./logs:/var/log
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             sleep 10 &&
+             python manage.py migrate &&
+             celery -A ngoconnect beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=devdb
+      - DB_USER=devuser
+      - DB_PASS=ngoconnect_db_pass
+      - DEBUG=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:13-alpine
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=devdb
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=ngoconnect_db_pass
+
+volumes:
+  dev-db-data:
+  dev-static-data:

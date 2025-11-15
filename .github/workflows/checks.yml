@@ -1,0 +1,62 @@
+name: Checks
+
+on: [push]
+
+jobs:
+  test-lint:
+    name: Test and Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install lint/test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit isort
+
+      - name: Lint - isort (import sorting)
+        run: isort ./ngoconnect --check --diff
+
+      - name: Security - Bandit
+        run: bandit -r ./ngoconnect --skip B101,B601
+
+      # Add filesystem vulnerability scanning - PINNED VERSION
+      - name: Run Trivy vulnerability scanner on filesystem
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '0'  # Don't fail on filesystem scan
+          severity: 'HIGH,CRITICAL'
+
+      - name: Start minimal services
+        run: docker compose up -d db
+
+      - name: Show Docker stats
+        run: docker stats --no-stream
+
+      - name: Run Django tests
+        run: docker compose run --rm -e GITHUB_ACTIONS=true app sh -c "python manage.py wait_for_db && python manage.py test"
+
+      - name: Test Django Check
+        run: docker compose run --rm -e GITHUB_ACTIONS=true app sh -c "python manage.py check"
+
+      - name: Test Migrations
+        run: docker compose run --rm -e GITHUB_ACTIONS=true app sh -c "python manage.py makemigrations --check"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
