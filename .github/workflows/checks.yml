@@ -27,7 +27,7 @@ jobs:
           pip install bandit isort
 
       - name: Lint - isort (import sorting)
-        run: isort ./ngoconnect --check --diff
+        run: isort ./ngoconnect --check --diff --profile django
 
       - name: Security - Bandit
         run: bandit -r ./ngoconnect --skip B101,B601
