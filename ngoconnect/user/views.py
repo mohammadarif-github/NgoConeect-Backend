@@ -17,7 +17,6 @@ class UserListAPIView(APIView):
         users = User.objects.all()
         serializer = UserSerializer(users, many=True)
         return Response({
-            'success': True,
             'count': users.count(),
             'data': serializer.data
         }, status=status.HTTP_200_OK)
