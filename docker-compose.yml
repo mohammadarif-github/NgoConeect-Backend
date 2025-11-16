@@ -22,7 +22,6 @@ services:
       - DB_USER=devuser
       - DB_PASS=ngoconnect_db_pass
       - DEBUG=1
-      # - SECRET_KEY=${SECRET_KEY}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
@@ -52,7 +51,6 @@ services:
       - DB_NAME=devdb
       - DB_USER=devuser
       - DB_PASS=ngoconnect_db_pass
-      # - SECRET_KEY=${SECRET_KEY}
       - DEBUG=1
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -80,7 +78,6 @@ services:
       - DB_USER=devuser
       - DB_PASS=ngoconnect_db_pass
       - DEBUG=1
-      # - SECRET_KEY=${SECRET_KEY}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
