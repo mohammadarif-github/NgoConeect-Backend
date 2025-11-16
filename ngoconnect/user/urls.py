@@ -7,3 +7,5 @@ app_name = 'user'
 urlpatterns = [
     path('users/', UserListAPIView.as_view(), name='user-list'),
 ]
+
+# skd check
