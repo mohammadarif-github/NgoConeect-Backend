@@ -1,6 +1,7 @@
 from django.db import models
 from user.models import User
 
+
 class Donation(models.Model):
     STATUS_CHOICES = (
         ('SUCCESS', 'Success'),
