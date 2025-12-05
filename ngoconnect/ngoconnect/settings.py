@@ -37,6 +37,9 @@ AUTH_USER_MODEL = 'user.User'
 INSTALLED_APPS = [
     'user',
     'core',
+    'volunteers',
+    'projects',
+    'donations',
     'rest_framework',
     'drf_spectacular',
     'django.contrib.admin',
