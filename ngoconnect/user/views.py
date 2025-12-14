@@ -1,22 +1,569 @@
+# user/views.py
+import structlog
+from core.permissions import IsBusinessAdmin
+from drf_spectacular.openapi import OpenApiResponse
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView, TokenRefreshView as BaseTokenRefreshView,
+)
 
-from .models import User
-from .serializers import UserSerializer
+from .email_service import EmailService
+from .models import EmailVerificationToken, PasswordResetToken, User
+from .serializers import (
+    AdminPasswordResetSerializer, ChangePasswordSerializer,
+    CustomTokenObtainPairSerializer, EmailVerificationSerializer,
+    ForgotPasswordSerializer, LogoutSerializer, ResendVerificationSerializer,
+    ResetPasswordSerializer, TokenRefreshResponseSerializer,
+    TokenRefreshSerializer, UserCreateSerializer, UserListSerializer,
+    UserProfileSerializer, UserUpdateSerializer,
+)
+
+logger = structlog.get_logger("api.business")
+security_logger = structlog.get_logger("api.security")
+audit_logger = structlog.get_logger("api.audit")
 
 
-class UserListAPIView(APIView):
-    """API view to fetch all users."""
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+class TokenRefreshView(BaseTokenRefreshView):
+    @extend_schema(
+        request=TokenRefreshSerializer,
+        responses={200: TokenRefreshResponseSerializer},
+        summary="Refresh JWT Token"
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+class RegistrationView(APIView):
+    """
+    Public endpoint for user registration.
+    Creates user and sends email verification link.
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'email_apis'
+
+    @extend_schema(
+        summary="Register new user",
+        description="Register a new user and send email verification link",
+        request=UserCreateSerializer,
+        responses={
+            201: OpenApiResponse(
+                description="User registered successfully",
+                examples=[
+                    OpenApiExample(
+                        'Success',
+                        value={
+                            'message': 'Registration successful. Please check your email to verify your account.',
+                            'email': 'user@example.com'
+                        }
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description="Validation errors"),
+            500: OpenApiResponse(description="Email sending failed")
+        }
+    )
+    def post(self, request):
+        serializer = UserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+        
+        if 'role' in validated_data:
+            validated_data.pop('role')
+        validated_data['role'] = 'general_user'
+        
+        try:
+            user = serializer.create(validated_data)
+            
+            # Create verification token
+            verification_token = EmailVerificationToken.objects.create(user=user)
+            
+            # Send verification email
+            email_sent = EmailService.send_verification_email(
+                user.email,
+                verification_token.token
+            )
+            
+            if email_sent:
+                security_logger.info(f"Registration successful, verification email sent to {user.email}")
+                return Response({
+                    'message': 'Registration successful. Please check your email to verify your account.',
+                    'email': user.email
+                }, status=status.HTTP_201_CREATED)
+            else:
+                # Email failed but user created - they can request resend
+                security_logger.warning(f"Registration successful but email failed for {user.email}")
+                return Response({
+                    'message': 'Registration successful but verification email failed. Please request a new verification link.',
+                    'email': user.email
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            security_logger.error(f"Registration failed: {str(e)}")
+            return Response(
+                {"detail": f"An error occurred during registration: {e}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class VerifyEmailView(APIView):
+    """Verify user's email address using token."""
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        summary="Verify email address",
+        description="Verify user's email using the token sent via email",
+        request=EmailVerificationSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Email verified successfully",
+                examples=[
+                    OpenApiExample(
+                        'Success',
+                        value={'message': 'Email verified successfully. You can now log in.'}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description="Invalid or expired token")
+        }
+    )
+    def post(self, request):
+        serializer = EmailVerificationSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        token = serializer.validated_data['token']
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+            verification_token = EmailVerificationToken.objects.get(token=token, user=user)
+            
+            if not verification_token.is_valid:
+                security_logger.warning(f"Email verification failed for {email} - expired or used token")
+                return Response(
+                    {'error': 'Verification link has expired or already been used. Please request a new one.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Verify the user
+            user.is_email_verified = True
+            user.save()
+            
+            # Mark token as used
+            verification_token.is_used = True
+            verification_token.save()
+            
+            # Send welcome email
+            EmailService.send_welcome_email(user.email, user.first_name)
+            
+            security_logger.info(f"Email verified successfully for {email}")
+            return Response(
+                {'message': 'Email verified successfully. You can now log in.'},
+                status=status.HTTP_200_OK
+            )
+            
+        except (User.DoesNotExist, EmailVerificationToken.DoesNotExist):
+            security_logger.warning(f"Email verification failed - invalid token or email: {email}")
+            return Response(
+                {'error': 'Invalid verification link.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class ResendVerificationView(APIView):
+    """Resend email verification link."""
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'email_apis'
+
+    @extend_schema(
+        summary="Resend verification email",
+        description="Resend email verification link to user",
+        request=ResendVerificationSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Verification email sent",
+                examples=[
+                    OpenApiExample(
+                        'Success',
+                        value={'message': 'Verification email sent. Please check your inbox.'}
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description="Email already verified or user not found")
+        }
+    )
+    def post(self, request):
+        serializer = ResendVerificationSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+            
+            if user.is_email_verified:
+                return Response(
+                    {'message': 'Email is already verified. You can log in.'},
+                    status=status.HTTP_200_OK
+                )
+            
+            # Invalidate existing tokens
+            EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
+            
+            # Create new token
+            verification_token = EmailVerificationToken.objects.create(user=user)
+            
+            # Send verification email
+            email_sent = EmailService.send_verification_email(user.email, verification_token.token)
+            
+            if email_sent:
+                security_logger.info(f"Verification email resent to {email}")
+                return Response(
+                    {'message': 'Verification email sent. Please check your inbox.'},
+                    status=status.HTTP_200_OK
+                )
+            else:
+                return Response(
+                    {'error': 'Failed to send verification email. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+        except User.DoesNotExist:
+            # Don't reveal if email exists or not (security)
+            security_logger.warning(f"Resend verification requested for non-existent email: {email}")
+            return Response(
+                {'message': 'Verification email sent. Please check your inbox.'},
+                status=status.HTTP_200_OK
+            )
+
+
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
     
-    permission_classes = [AllowAny]  
-    
+    @extend_schema(
+        summary="Get user profile",
+        description="Retrieve the current user's profile information",
+        responses={200: UserProfileSerializer}
+    )
     def get(self, request):
-        """Get all users."""
-        users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response({
-            'count': users.count(),
-            'data': serializer.data
-        }, status=status.HTTP_200_OK)
+        logger.info(f"Profile accessed by user {request.user.email}")
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        summary="Update user profile",
+        description="Update user's first name and/or last name",
+        request=UserUpdateSerializer,
+        responses={200: UserProfileSerializer}
+    )
+    def patch(self, request):
+        if 'is_active' in request.data and not request.data['is_active']:
+            can_proceed, error_message = request.user.can_be_deactivated_or_deleted()
+            if not can_proceed:
+                return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            old_data = f"{request.user.first_name} {request.user.last_name}"
+            serializer.save()
+            new_data = f"{request.user.first_name} {request.user.last_name}"
+            audit_logger.info(f"Profile updated by {request.user.email}: '{old_data}' -> '{new_data}'")
+            return Response(UserProfileSerializer(request.user).data)
+        
+        logger.warning(f"Profile update failed for {request.user.email} - validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'post_apis'
+    
+    @extend_schema(
+        summary="Change password",
+        description="Change the current user's password",
+        request=ChangePasswordSerializer,
+        responses={
+            200: OpenApiResponse(description="Password changed successfully"),
+            400: OpenApiResponse(description="Invalid password or validation errors")
+        }
+    )
+    def post(self, request):
+        user_email = request.user.email
+        security_logger.info(f"Password change attempt for user {user_email}")
+        
+        serializer = ChangePasswordSerializer(
+            data=request.data, 
+            context={'user': request.user}
+        )
+        if serializer.is_valid():
+            if not request.user.check_password(serializer.validated_data['old_password']):
+                security_logger.warning(f"Password change failed for {user_email} - invalid old password")
+                return Response({'error': 'Invalid old password'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            request.user.set_password(serializer.validated_data['new_password'])
+            request.user.save()
+            security_logger.info(f"Password changed successfully for user {user_email}")
+            return Response({'message': 'Password changed successfully'})
+        
+        security_logger.warning(f"Password change failed for {user_email} - validation errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Logout user",
+        description="Logout user by blacklisting refresh token",
+        request=LogoutSerializer,
+        responses={
+            200: OpenApiResponse(description="Logout successful"),
+            400: OpenApiResponse(description="Invalid token")
+        }
+    )
+    def post(self, request):
+        user_email = getattr(request.user, 'email', 'unknown')
+        
+        serializer = LogoutSerializer(data=request.data)
+        if not serializer.is_valid():
+            logger.warning(f"Logout failed for {user_email} - invalid data")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            refresh_token = serializer.validated_data['refresh']
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            logger.info(f"User {user_email} logged out successfully")
+            return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+            
+        except TokenError as e:
+            error_message = str(e).lower()
+            
+            if any(word in error_message for word in ['blacklisted', 'expired']):
+                logger.info(f"User {user_email} logout - refresh token already invalid: {str(e)}")
+                return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+            else:
+                logger.warning(f"User {user_email} logout failed - invalid refresh token: {str(e)}")
+                return Response({'error': 'Invalid refresh token provided'}, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            logger.error(f"Unexpected logout error for {user_email}: {str(e)}")
+            return Response({'error': 'An error occurred during logout'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'email_apis'
+    
+    @extend_schema(
+        summary="Request password reset",
+        description="Send a password reset email to the user",
+        request=ForgotPasswordSerializer,
+        responses={
+            200: OpenApiResponse(description="Password reset email sent"),
+            400: OpenApiResponse(description="Validation errors")
+        }
+    )
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            security_logger.warning(f"Password reset request failed - validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data['email']
+        security_logger.info(f"Password reset requested for email: {email}")
+        
+        try:
+            user = User.objects.get(email=email)
+            
+            # Invalidate existing tokens
+            PasswordResetToken.objects.filter(user=user, is_used=False).update(is_used=True)
+            
+            # Create new token
+            reset_token = PasswordResetToken.objects.create(user=user)
+            
+            # Send email
+            email_sent = EmailService.send_password_reset_email(email, reset_token.token)
+            
+            if email_sent:
+                security_logger.info(f"Password reset email sent successfully to {email}")
+            else:
+                security_logger.error(f"Failed to send password reset email to {email}")
+                
+        except User.DoesNotExist:
+            security_logger.warning(f"Password reset requested for non-existent email: {email}")
+        
+        # Always return success (security - don't reveal if email exists)
+        return Response({'message': 'Password reset email sent'}, status=status.HTTP_200_OK)
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+    
+    @extend_schema(
+        summary="Reset password with token",
+        description="Reset user password using the token received via email",
+        request=ResetPasswordSerializer,
+        responses={
+            200: OpenApiResponse(description="Password reset successfully"),
+            400: OpenApiResponse(description="Invalid or expired token")
+        }
+    )
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            security_logger.warning(f"Password reset failed - validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        token = serializer.validated_data['token']
+        email = serializer.validated_data['email']
+        new_password = serializer.validated_data['new_password']
+        
+        try:
+            user = User.objects.get(email=email)
+            reset_token = PasswordResetToken.objects.get(token=token, user=user)
+            
+            if not reset_token.is_valid:
+                security_logger.warning(f"Password reset failed for {email} - expired or invalid token")
+                return Response(
+                    {'error': 'Token is expired or invalid'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            user.set_password(new_password)
+            user.save()
+            
+            reset_token.is_used = True
+            reset_token.save()
+            
+            security_logger.info(f"Password reset completed successfully for user {email}")
+            return Response({'message': 'Password reset successfully'}, status=status.HTTP_200_OK)
+            
+        except (User.DoesNotExist, PasswordResetToken.DoesNotExist):
+            security_logger.warning(f"Password reset failed for {email} - invalid token or email")
+            return Response({'error': 'Invalid token or email'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Admin Views
+class AdminUserListView(APIView):
+    permission_classes = [IsAuthenticated, IsBusinessAdmin]
+    
+    @extend_schema(
+        summary="List all users (Admin only)",
+        description="Get list of all users in the system",
+        responses={200: UserListSerializer(many=True)}
+    )
+    def get(self, request):
+        users = User.objects.all().order_by('first_name', 'last_name')
+        serializer = UserListSerializer(users, many=True)
+        return Response(serializer.data)
+
+
+class AdminUserDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsBusinessAdmin]
+    
+    def get_object(self, user_id):
+        try:
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return None
+    
+    @extend_schema(
+        summary="Get user details (Admin only)",
+        description="Get detailed information about a specific user",
+        responses={200: UserListSerializer, 404: OpenApiResponse(description="User not found")}
+    )
+    def get(self, request, user_id):
+        user = self.get_object(user_id)
+        if not user:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = UserListSerializer(user)
+        return Response(serializer.data)
+    
+    @extend_schema(
+        summary="Update user (Admin only)",
+        description="Admin can update user's name, role, and active status",
+        request=UserUpdateSerializer,
+        responses={200: UserListSerializer, 404: OpenApiResponse(description="User not found")}
+    )
+    def patch(self, request, user_id):
+        user = self.get_object(user_id)
+        if not user:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UserListSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        summary="Delete user (Admin only)",
+        description="Admin can delete a user from the system",
+        responses={200: OpenApiResponse(description="User deleted successfully"), 404: OpenApiResponse(description="User not found")}
+    )
+    def delete(self, request, user_id):
+        user = self.get_object(user_id)
+        if not user:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        can_proceed, error_message = user.can_be_deactivated_or_deleted()
+        if not can_proceed:
+            return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user_email = user.email
+        user.delete()
+        
+        return Response({'message': f'User {user_email} deleted successfully'}, status=status.HTTP_200_OK)
+
+
+class AdminResetPasswordView(APIView):
+    permission_classes = [IsAuthenticated, IsBusinessAdmin]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'post_apis'
+    
+    @extend_schema(
+        summary="Reset user password (Admin only)",
+        description="Admin can reset any user's password",
+        request=AdminPasswordResetSerializer,
+        responses={
+            200: OpenApiResponse(description="Password reset successfully"),
+            404: OpenApiResponse(description="User not found")
+        }
+    )
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = AdminPasswordResetSerializer(data=request.data, context={'user': user})
+        if serializer.is_valid():
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({'message': 'Password reset successfully'})
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
