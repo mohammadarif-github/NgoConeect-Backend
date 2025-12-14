@@ -86,9 +86,9 @@ WSGI_APPLICATION = "ngoconnect.wsgi.application"
 
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
-print('secret key:', SECRET_KEY)
+# print('secret key:', SECRET_KEY)
 
-print("DATABASE_URL:", DATABASE_URL)
+# print("DATABASE_URL:", DATABASE_URL)
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
