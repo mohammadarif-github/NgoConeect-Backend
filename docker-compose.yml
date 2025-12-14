@@ -24,6 +24,9 @@ services:
       - DEBUG=1
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
     depends_on:
       - db
       - redis
@@ -96,3 +99,19 @@ services:
 volumes:
   dev-db-data:
   dev-static-data:
+
+# from django.core.mail import send_mail
+
+# send_mail(
+
+#     'Test Email',
+
+#     'This is a test from NGOConnect!',
+
+#     'ngoconnect.bd@gmail.com',
+
+#     ['mohammadarif.it159@gmail.com'],
+
+#     fail_silently=False,
+
+# )

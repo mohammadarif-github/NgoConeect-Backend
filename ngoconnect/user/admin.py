@@ -6,12 +6,12 @@ from .models import User
 
 class UserAdmin(BaseUserAdmin):
     ordering = ['email']
-    list_display = ['email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active']
+    list_display = ['email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active',"is_email_verified"]
     list_filter = ['role', 'is_staff', 'is_active', 'is_google_user']
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal info', {'fields': ('first_name', 'last_name')}),
-        ('Permissions', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Permissions', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions', 'is_email_verified')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
         ('Google Auth', {'fields': ('google_id', 'is_google_user')}),
     )
