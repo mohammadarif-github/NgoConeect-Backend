@@ -134,3 +134,27 @@ class PasswordResetToken(models.Model):
     
     def __str__(self):
         return f"Password reset token for {self.user.email}"
+    
+class EmailOtp(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveIntegerField(default=0)
+    
+    def save(self, *args, **kwargs):
+        if not self.otp:
+            # Generate 6-digit secure OTP
+            self.otp = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=5)
+        super().save(*args, **kwargs)
+        
+    def is_expired(self):
+        return timezone.now() >= self.expires_at
+    
+    def is_valid(self, otp):
+        return timezone.now() < self.expires_at and self.attempts < 5
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.otp}"

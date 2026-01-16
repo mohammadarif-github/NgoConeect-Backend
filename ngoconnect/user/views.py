@@ -1,6 +1,9 @@
 # user/views.py
 import structlog
 from core.permissions import IsBusinessAdmin
+from django.db import transaction
+from donations.models import Donation
+from donations.serializers import DonationPublicSerializer
 from drf_spectacular.openapi import OpenApiResponse
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
@@ -15,14 +18,14 @@ from rest_framework_simplejwt.views import (
 )
 
 from .email_service import EmailService
-from .models import EmailVerificationToken, PasswordResetToken, User
+from .models import EmailOtp, EmailVerificationToken, PasswordResetToken, User
 from .serializers import (
     AdminPasswordResetSerializer, ChangePasswordSerializer,
-    CustomTokenObtainPairSerializer, EmailVerificationSerializer,
-    ForgotPasswordSerializer, LogoutSerializer, ResendVerificationSerializer,
+    CustomTokenObtainPairSerializer, DonationHistorySerializer,
+    ForgotPasswordSerializer, LogoutSerializer, ResendOtpSerializer,
     ResetPasswordSerializer, TokenRefreshResponseSerializer,
     TokenRefreshSerializer, UserCreateSerializer, UserListSerializer,
-    UserProfileSerializer, UserUpdateSerializer,
+    UserProfileSerializer, UserUpdateSerializer, VerifyEmailSerializer,
 )
 
 logger = structlog.get_logger("api.business")
@@ -47,7 +50,7 @@ class TokenRefreshView(BaseTokenRefreshView):
 class RegistrationView(APIView):
     """
     Public endpoint for user registration.
-    Creates user and sends email verification link.
+    Creates user and sends 6-digit verification code.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -55,7 +58,7 @@ class RegistrationView(APIView):
 
     @extend_schema(
         summary="Register new user",
-        description="Register a new user and send email verification link",
+        description="Register a new user and send an email with a 6-digit verification code (OTP).",
         request=UserCreateSerializer,
         responses={
             201: OpenApiResponse(
@@ -64,195 +67,173 @@ class RegistrationView(APIView):
                     OpenApiExample(
                         'Success',
                         value={
-                            'message': 'Registration successful. Please check your email to verify your account.',
+                            'message': 'Registration successful. Please check your email for the OTP.',
                             'email': 'user@example.com'
                         }
                     )
                 ]
             ),
-            400: OpenApiResponse(description="Validation errors"),
+            400: OpenApiResponse(description="Validation errors or User already exists"),
             500: OpenApiResponse(description="Email sending failed")
         }
     )
     def post(self, request):
         serializer = UserCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        validated_data = serializer.validated_data
+        if serializer.is_valid():
+            try:
+                with transaction.atomic():
+                    # 1. Create User (Active=False until verified)
+                    user = serializer.save()
+                    
+                    # 2. Generate OTP
+                    otp_instance = EmailOtp.objects.create(user=user)
+                    
+                    # 3. Send Email
+                    if EmailService.send_otp_email(user.email, otp_instance.otp):
+                        return Response({
+                            'message': 'Registration successful. Please check your email for the OTP.',
+                            'email': user.email
+                        }, status=status.HTTP_201_CREATED)
+                    else:
+                        # User created, but email failed. 
+                        # We don't rollback user creation here so they can use "Resend OTP" logic,
+                        # but you could raise an exception to rollback if preferred.
+                        return Response({
+                            'message': 'User registered, but failed to send email. Please use the Resend OTP endpoint.',
+                            'email': user.email
+                        }, status=status.HTTP_201_CREATED)
+                        
+            except Exception as e:
+                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        if 'role' in validated_data:
-            validated_data.pop('role')
-        validated_data['role'] = 'general_user'
-        
-        try:
-            user = serializer.create(validated_data)
-            
-            # Create verification token
-            verification_token = EmailVerificationToken.objects.create(user=user)
-            
-            # Send verification email
-            email_sent = EmailService.send_verification_email(
-                user.email,
-                verification_token.token
-            )
-            
-            if email_sent:
-                security_logger.info(f"Registration successful, verification email sent to {user.email}")
-                return Response({
-                    'message': 'Registration successful. Please check your email to verify your account.',
-                    'email': user.email
-                }, status=status.HTTP_201_CREATED)
-            else:
-                # Email failed but user created - they can request resend
-                security_logger.warning(f"Registration successful but email failed for {user.email}")
-                return Response({
-                    'message': 'Registration successful but verification email failed. Please request a new verification link.',
-                    'email': user.email
-                }, status=status.HTTP_201_CREATED)
-                
-        except Exception as e:
-            security_logger.error(f"Registration failed: {str(e)}")
-            return Response(
-                {"detail": f"An error occurred during registration: {e}"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VerifyEmailView(APIView):
-    """Verify user's email address using token."""
+    """
+    Public endpoint to verify user email using OTP.
+    """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'email_apis'
 
     @extend_schema(
-        summary="Verify email address",
-        description="Verify user's email using the token sent via email",
-        request=EmailVerificationSerializer,
+        summary="Verify Email OTP",
+        description="Verify the user's email address using the 6-digit OTP sent to their email.",
+        request=VerifyEmailSerializer,
         responses={
             200: OpenApiResponse(
                 description="Email verified successfully",
                 examples=[
                     OpenApiExample(
                         'Success',
-                        value={'message': 'Email verified successfully. You can now log in.'}
+                        value={'message': 'Email verified successfully! You can now login.'}
                     )
                 ]
             ),
-            400: OpenApiResponse(description="Invalid or expired token")
+            400: OpenApiResponse(description="Invalid OTP, Expired OTP, or Missing fields"),
+            404: OpenApiResponse(description="User not found")
         }
     )
     def post(self, request):
-        serializer = EmailVerificationSerializer(data=request.data)
-        
+        serializer = VerifyEmailSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        token = serializer.validated_data['token']
+
         email = serializer.validated_data['email']
-        
+        otp_code = serializer.validated_data['otp']
+
         try:
             user = User.objects.get(email=email)
-            verification_token = EmailVerificationToken.objects.get(token=token, user=user)
-            
-            if not verification_token.is_valid:
-                security_logger.warning(f"Email verification failed for {email} - expired or used token")
-                return Response(
-                    {'error': 'Verification link has expired or already been used. Please request a new one.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Verify the user
-            user.is_email_verified = True
-            user.save()
-            
-            # Mark token as used
-            verification_token.is_used = True
-            verification_token.save()
-            
-            # Send welcome email
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.is_email_verified:
+            return Response({'message': 'Email already verified'}, status=status.HTTP_200_OK)
+
+        # Get latest OTP
+        try:
+            otp_record = EmailOtp.objects.filter(user=user).latest('created_at')
+        except EmailOtp.DoesNotExist:
+            return Response({'error': 'No OTP found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # OTP Validation
+        if otp_record.otp != otp_code:
+            otp_record.attempts += 1
+            otp_record.save()
+            return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_record.is_expired():
+            return Response({'error': 'OTP has expired'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp_record.attempts >= 5:
+            return Response({'error': 'Too many failed attempts. Request a new OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Success Logic
+        user.is_active = True
+        user.is_email_verified = True
+        user.save()
+        
+        # Cleanup
+        EmailOtp.objects.filter(user=user).delete()
+        
+        # Send Welcome Email (Optional, non-blocking)
+        try:
             EmailService.send_welcome_email(user.email, user.first_name)
-            
-            security_logger.info(f"Email verified successfully for {email}")
-            return Response(
-                {'message': 'Email verified successfully. You can now log in.'},
-                status=status.HTTP_200_OK
-            )
-            
-        except (User.DoesNotExist, EmailVerificationToken.DoesNotExist):
-            security_logger.warning(f"Email verification failed - invalid token or email: {email}")
-            return Response(
-                {'error': 'Invalid verification link.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        except:
+            pass #nosec
+
+        return Response({'message': 'Email verified successfully! You can now login.'}, status=status.HTTP_200_OK)
 
 
-class ResendVerificationView(APIView):
-    """Resend email verification link."""
+class ResendOtpView(APIView):
+    """
+    Public endpoint to resend OTP if the previous one expired or was lost.
+    """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'email_apis'
 
     @extend_schema(
-        summary="Resend verification email",
-        description="Resend email verification link to user",
-        request=ResendVerificationSerializer,
+        summary="Resend OTP",
+        description="Generate and send a new OTP to the user's email.",
+        request=ResendOtpSerializer,
         responses={
             200: OpenApiResponse(
-                description="Verification email sent",
+                description="OTP sent successfully",
                 examples=[
                     OpenApiExample(
                         'Success',
-                        value={'message': 'Verification email sent. Please check your inbox.'}
+                        value={'message': 'New OTP sent successfully'}
                     )
                 ]
             ),
-            400: OpenApiResponse(description="Email already verified or user not found")
+            404: OpenApiResponse(description="User not found")
         }
     )
     def post(self, request):
-        serializer = ResendVerificationSerializer(data=request.data)
-        
+        serializer = ResendOtpSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+
         email = serializer.validated_data['email']
         
         try:
             user = User.objects.get(email=email)
-            
             if user.is_email_verified:
-                return Response(
-                    {'message': 'Email is already verified. You can log in.'},
-                    status=status.HTTP_200_OK
-                )
+                return Response({'message': 'User is already verified'}, status=status.HTTP_200_OK)
             
-            # Invalidate existing tokens
-            EmailVerificationToken.objects.filter(user=user, is_used=False).update(is_used=True)
+            # Generate New OTP
+            otp_instance = EmailOtp.objects.create(user=user)
             
-            # Create new token
-            verification_token = EmailVerificationToken.objects.create(user=user)
-            
-            # Send verification email
-            email_sent = EmailService.send_verification_email(user.email, verification_token.token)
-            
-            if email_sent:
-                security_logger.info(f"Verification email resent to {email}")
-                return Response(
-                    {'message': 'Verification email sent. Please check your inbox.'},
-                    status=status.HTTP_200_OK
-                )
+            # Send Email
+            if EmailService.send_otp_email(user.email, otp_instance.otp):
+                return Response({'message': 'New OTP sent successfully'}, status=status.HTTP_200_OK)
             else:
-                return Response(
-                    {'error': 'Failed to send verification email. Please try again.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                return Response({'error': 'Failed to send email. Try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 
         except User.DoesNotExist:
-            # Don't reveal if email exists or not (security)
-            security_logger.warning(f"Resend verification requested for non-existent email: {email}")
-            return Response(
-                {'message': 'Verification email sent. Please check your inbox.'},
-                status=status.HTTP_200_OK
-            )
-
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -320,11 +301,23 @@ class ChangePasswordView(APIView):
             
             request.user.set_password(serializer.validated_data['new_password'])
             request.user.save()
-            security_logger.info(f"Password changed successfully for user {user_email}")
-            return Response({'message': 'Password changed successfully'})
+            return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
         
-        security_logger.warning(f"Password change failed for {user_email} - validation errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class UserDonationHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="My Donation History",
+        description="List all donations made by the logged-in user.",
+        responses={200: DonationHistorySerializer(many=True)}
+    )
+    def get(self, request):
+        donations = Donation.objects.filter(donor=request.user).order_by('-timestamp')
+        serializer = DonationHistorySerializer(donations, many=True)
+        return Response(serializer.data)
+
 
 
 class LogoutView(APIView):

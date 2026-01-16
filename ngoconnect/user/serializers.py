@@ -4,6 +4,7 @@ import logging
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from donations.models import Donation
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -27,7 +28,6 @@ class TokenRefreshResponseSerializer(serializers.Serializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
@@ -39,34 +39,27 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         email = attrs.get('email') or attrs.get('username')
         password = attrs.get('password')
         
-        logger.info(f"Login attempt for email: {email}")
-        
         # Step 1: Check if user exists
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            logger.warning(f"Login failed - user not found: {email}")
             raise serializers.ValidationError("User with this email doesn't exist")
         
-        # Step 2: Check if email is verified
-        if not user.is_email_verified:
-            logger.warning(f"Login failed - email not verified: {email}")
-            raise serializers.ValidationError("Please verify your email before logging in.")
+        # Step 2: Check if email is verified (CRITICAL FOR YOUR NEW FLOW)
+        if not user.is_email_verified: 
+            # Note: Ensure your User model has this field, or use user.is_active if that's your logic
+            raise serializers.ValidationError("Please verify your email using the OTP sent to you before logging in.")
         
         # Step 3: Check if account is active
         if not user.is_active:
-            logger.warning(f"Login failed - inactive account: {email}")
             raise serializers.ValidationError("Your account has been deactivated. Please contact support.")
         
         # Step 4: Check password
         authenticated_user = authenticate(username=email, password=password)
         if authenticated_user is None:
-            logger.warning(f"Login failed - wrong password: {email}")
             raise serializers.ValidationError("Your password is incorrect")
         
-        logger.info(f"Login successful for: {email}")
-        data = super().validate(attrs)
-        return data
+        return super().validate(attrs)
 
 
 class LogoutSerializer(serializers.Serializer):
@@ -121,24 +114,15 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Passwords don't match")
         return attrs
     
-    def validate_password(self, value):
-        try:
-            validate_password(value, user=None)
-        except ValidationError as e:
-            raise serializers.ValidationError(list(e.messages))
-        return value
-
     def create(self, validated_data):
         validated_data.pop('confirm_password')
         password = validated_data.pop('password')
-        
-        # Create user with is_active=True but is_email_verified=False
         user = User.objects.create_user(**validated_data)
         user.set_password(password)
-        user.is_email_verified = False  # Require email verification
+        user.is_email_verified = False 
+        user.is_active = True 
         user.save()
         return user
-
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -240,20 +224,29 @@ class ResetPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError(list(e.messages))
         return value
 
-
-class EmailVerificationSerializer(serializers.Serializer):
-    token = serializers.CharField(
-        required=True,
-        help_text="Email verification token"
+class VerifyEmailSerializer(serializers.Serializer):
+    """
+    Validates the OTP submission.
+    """
+    email = serializers.EmailField(required=True)
+    otp = serializers.CharField(
+        required=True, 
+        min_length=6, 
+        max_length=6,
+        help_text="6-digit verification code"
     )
-    email = serializers.EmailField(
-        required=True,
-        help_text="Email address to verify"
-    )
 
+class ResendOtpSerializer(serializers.Serializer):
+    """
+    Validates request to resend OTP.
+    """
+    email = serializers.EmailField(required=True)
 
-class ResendVerificationSerializer(serializers.Serializer):
-    email = serializers.EmailField(
-        required=True,
-        help_text="Email address to resend verification link"
-    )
+class DonationHistorySerializer(serializers.ModelSerializer):
+    campaign_title = serializers.ReadOnlyField(source='campaign.title')
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Donation
+        fields = ('id', 'amount', 'transaction_id', 'status', 'status_display', 
+                  'campaign_title', 'timestamp', 'receipt_sent')

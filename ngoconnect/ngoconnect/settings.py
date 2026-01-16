@@ -14,6 +14,14 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'changeme-this-in-production')
 
 DEBUG = os.environ.get('DEBUG', '0') == '1'
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp-relay.brevo.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = '80a9bd002@smtp-brevo.com'
+EMAIL_HOST_PASSWORD = os.environ.get('BREVO_SMTP_KEY')
+DEFAULT_FROM_EMAIL = '<arifuldummy@gmail.com>'
+
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
@@ -231,3 +239,7 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'ngoconnect.bd@gmail.c
 
 # Frontend URL for email links
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+# SSLCommerz Configuration
+SSLCOMMERZ_STORE_ID = os.environ.get('SSLCOMMERZ_STORE_ID', 'ngoco6969db2ca5da7')
+SSLCOMMERZ_STORE_PASS = os.environ.get('SSLCOMMERZ_STORE_PASS', 'ngoco6969db2ca5da7@ssl')
+SSLCOMMERZ_IS_SANDBOX = os.environ.get('SSLCOMMERZ_IS_SANDBOX', 'True') == 'True'

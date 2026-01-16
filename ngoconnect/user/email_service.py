@@ -12,6 +12,70 @@ class EmailService:
     """Unified email service using Django's SMTP backend."""
     
     @staticmethod
+    def send_otp_email(user_email, otp_code):
+        """Send 6-digit OTP for email verification."""
+        try:
+            subject = "Your Verification Code - NGOConnect"
+            
+            text_body = f"""
+Hello,
+
+Your verification code for NGOConnect is: {otp_code}
+
+This code will expire in 5 minutes.
+
+If you didn't request this code, please ignore this email.
+
+Best regards,
+NGOConnect Team
+            """
+            
+            html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .otp-box {{ 
+            font-size: 24px; 
+            font-weight: bold; 
+            letter-spacing: 5px; 
+            color: #4CAF50; 
+            background: #f4f4f4; 
+            padding: 15px; 
+            text-align: center; 
+            margin: 20px 0; 
+            border-radius: 8px;
+        }}
+        .footer {{ margin-top: 30px; font-size: 12px; color: #666; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Verify Your Email</h2>
+        <p>Use the following code to complete your registration:</p>
+        
+        <div class="otp-box">{otp_code}</div>
+        
+        <p>This code is valid for 5 minutes.</p>
+        <div class="footer">
+            <p>If you didn't create an account with us, please ignore this email.</p>
+            <p>Best regards,<br>NGOConnect Team</p>
+        </div>
+    </div>
+</body>
+</html>
+            """
+            
+            # Reuse your base send_email method
+            return EmailService.send_email(user_email, subject, text_body, html_body)
+            
+        except Exception as e:
+            logger.error(f"OTP email sending failed: {str(e)}")
+            return False
+    
+    @staticmethod
     def send_email(to_email, subject, text_body, html_body=None):
         """Base method to send emails."""
         try:
@@ -183,6 +247,85 @@ NGOConnect Team
             
         except Exception as e:
             logger.error(f"Welcome email sending failed: {str(e)}")
+            return False
+
+    @staticmethod
+    def send_donation_receipt(donation):
+        """Send donation receipt email."""
+        try:
+            subject = "Donation Receipt - NGOConnect"
+            
+            donor_name = donation.donor_name or (donation.donor.first_name if donation.donor else "Valued Donor")
+            amount = donation.amount
+            trx_id = donation.transaction_id
+            date = donation.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            campaign_title = donation.campaign.title if donation.campaign else "General Donation"
+            
+            text_body = f"""
+Hello {donor_name},
+
+Thank you for your generous donation of BDT {amount} for "{campaign_title}".
+
+Transaction ID: {trx_id}
+Date: {date}
+
+Your contribution will make a significant impact.
+
+Best regards,
+NGOConnect Team
+            """
+            
+            html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-top: 5px solid #4CAF50; }}
+        .header {{ text-align: center; margin-bottom: 20px; }}
+        .header h2 {{ color: #4CAF50; }}
+        .receipt-box {{ background: #f9f9f9; padding: 20px; margin: 20px 0; border-radius: 5px; }}
+        .amount {{ font-size: 24px; font-weight: bold; color: #333; }}
+        .footer {{ margin-top: 30px; font-size: 12px; color: #666; text-align: center; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Thank You!</h2>
+            <p>Your donation has been received successfully.</p>
+        </div>
+        
+        <p>Hello {donor_name},</p>
+        <p>Thank you for your generous donation to <strong>{campaign_title}</strong>.</p>
+        
+        <div class="receipt-box">
+            <p>Amount Donated:</p>
+            <p class="amount">BDT {amount}</p>
+            <hr>
+            <p><strong>Transaction ID:</strong> {trx_id}</p>
+            <p><strong>Date:</strong> {date}</p>
+            <p><strong>Status:</strong> Success</p>
+        </div>
+        
+        <p>Your contribution will make a significant impact.</p>
+        
+        <div class="footer">
+            <p>NGOConnect Team</p>
+            <p>This is an automated receipt.</p>
+        </div>
+    </div>
+</body>
+</html>
+            """
+            
+            email = donation.donor_email or (donation.donor.email if donation.donor else None)
+            if email:
+                return EmailService.send_email(email, subject, text_body, html_body)
+            return False
+            
+        except Exception as e:
+            logger.error(f"Donation receipt email sending failed: {str(e)}")
             return False
 
 
