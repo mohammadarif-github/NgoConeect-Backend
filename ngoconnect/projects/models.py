@@ -63,3 +63,56 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.campaign.title} - {self.title}"
+# --- Event Model (New Requirement FR-CAMP-02) ---
+class Event(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='events')
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    
+    start_datetime = models.DateTimeField()
+    end_datetime = models.DateTimeField()
+    location = models.CharField(max_length=255)
+    
+    capacity = models.PositiveIntegerField(default=0, help_text="Maximum number of volunteers (0 for unlimited)")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['start_datetime']
+        verbose_name = "Event"
+        verbose_name_plural = "Events"
+
+    def __str__(self):
+        return f"{self.title} ({self.start_datetime.date()})"
+    
+    @property
+    def participants_count(self):
+        return self.participants.count()
+    
+    @property
+    def is_full(self):
+        if self.capacity == 0:
+            return False
+        return self.participants.count() >= self.capacity
+
+
+class EventParticipant(models.Model):
+    STATUS_CHOICES = (
+        ('REGISTERED', 'Registered'),
+        ('ATTENDED', 'Attended'),
+        ('CANCELLED', 'Cancelled'),
+    )
+    
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='participants')
+    volunteer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='event_signups',
+                                  limit_choices_to={'role': 'volunteer'})
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='REGISTERED')
+    signup_date = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('event', 'volunteer')
+        ordering = ['-signup_date']
+
+    def __str__(self):
+        return f"{self.volunteer.email} - {self.event.title}"
