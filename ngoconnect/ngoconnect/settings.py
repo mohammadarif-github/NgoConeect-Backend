@@ -14,14 +14,6 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'changeme-this-in-production')
 
 DEBUG = os.environ.get('DEBUG', '0') == '1'
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp-relay.brevo.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = '80a9bd002@smtp-brevo.com'
-EMAIL_HOST_PASSWORD = os.environ.get('BREVO_SMTP_KEY')
-DEFAULT_FROM_EMAIL = '<arifuldummy@gmail.com>'
-
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:

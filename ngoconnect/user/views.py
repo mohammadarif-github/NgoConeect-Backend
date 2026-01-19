@@ -95,9 +95,6 @@ class RegistrationView(APIView):
                             'email': user.email
                         }, status=status.HTTP_201_CREATED)
                     else:
-                        # User created, but email failed. 
-                        # We don't rollback user creation here so they can use "Resend OTP" logic,
-                        # but you could raise an exception to rollback if preferred.
                         return Response({
                             'message': 'User registered, but failed to send email. Please use the Resend OTP endpoint.',
                             'email': user.email
@@ -173,11 +170,7 @@ class VerifyEmailView(APIView):
         user.is_active = True
         user.is_email_verified = True
         user.save()
-        
-        # Cleanup
         EmailOtp.objects.filter(user=user).delete()
-        
-        # Send Welcome Email (Optional, non-blocking)
         try:
             EmailService.send_welcome_email(user.email, user.first_name)
         except:
