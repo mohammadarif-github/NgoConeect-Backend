@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .dashboard_views import DashboardSummaryView
 from .views import (
     AdminResetPasswordView, AdminUserDetailView, AdminUserListView,
     ChangePasswordView, CustomTokenObtainPairView, ForgotPasswordView,
@@ -18,6 +19,7 @@ urlpatterns = [
     # Profile & Password
     path('profile/', ProfileView.as_view(), name='profile'),
     path('profile/donations/', UserDonationHistoryView.as_view(), name='user_donations'),
+    path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard_summary'),
     path('change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset_password'),

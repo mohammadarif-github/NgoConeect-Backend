@@ -15,5 +15,6 @@ urlpatterns = [
 
     # Event URLs (FR-CAMP-02)
     path('events/', views.EventListCreateView.as_view(), name='event-list'),
+    path('events/<int:pk>/', views.EventDetailView.as_view(), name='event-detail'),
     path('events/<int:pk>/signup/', views.EventSignupView.as_view(), name='event-signup'),
 ]

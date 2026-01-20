@@ -13,15 +13,22 @@ class VolunteerApplySerializer(serializers.ModelSerializer):
     
     def validate(self, attrs):
         user = self.context['request'].user
+        
+        # Prevent Admin/Managers from applying as volunteers (downgrading role)
+        if user.role in ['admin', 'manager']:
+            raise serializers.ValidationError("Admins and Managers cannot apply as volunteers.")
+
         if VolunteerProfile.objects.filter(user=user).exists():
             raise serializers.ValidationError("You have already applied as a volunteer.")
         return attrs
     
     def create(self, validated_data):
         user = self.context['request'].user
-        # Update user role
-        user.role = 'volunteer'
-        user.save()
+        # Do NOT update role to 'volunteer' immediately 
+        # Wait for Admin approval to change role or handle it logic elsewhere if 'volunteer' role is strictly for approved ones
+        # For now, we will NOT change the role here, preventing the hijacking issue.
+        # User remains 'general_user' until approved? 
+        # Requirement says: "Admin shall review and approve/reject".
         
         return VolunteerProfile.objects.create(user=user, **validated_data)
 
