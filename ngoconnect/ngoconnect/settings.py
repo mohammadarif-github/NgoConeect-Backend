@@ -10,7 +10,8 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'changeme-this-in-production')
+# If SECRET_KEY is set but empty string, fallback to default
+SECRET_KEY = os.environ.get('SECRET_KEY') or 'changeme-this-in-production'
 
 DEBUG = os.environ.get('DEBUG', '0') == '1'
 
