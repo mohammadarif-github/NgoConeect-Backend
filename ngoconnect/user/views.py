@@ -23,9 +23,10 @@ from .serializers import (
     AdminPasswordResetSerializer, ChangePasswordSerializer,
     CustomTokenObtainPairSerializer, DonationHistorySerializer,
     ForgotPasswordSerializer, LogoutSerializer, ResendOtpSerializer,
-    ResetPasswordSerializer, TokenRefreshResponseSerializer,
-    TokenRefreshSerializer, UserCreateSerializer, UserListSerializer,
-    UserProfileSerializer, UserUpdateSerializer, VerifyEmailSerializer,
+    ResetPasswordSerializer, SelfUserUpdateSerializer,
+    TokenRefreshResponseSerializer, TokenRefreshSerializer,
+    UserCreateSerializer, UserListSerializer, UserProfileSerializer,
+    UserUpdateSerializer, VerifyEmailSerializer,
 )
 
 logger = structlog.get_logger("api.business")
@@ -244,16 +245,15 @@ class ProfileView(APIView):
     @extend_schema(
         summary="Update user profile",
         description="Update user's first name and/or last name",
-        request=UserUpdateSerializer,
+        request=SelfUserUpdateSerializer,
         responses={200: UserProfileSerializer}
     )
     def patch(self, request):
-        if 'is_active' in request.data and not request.data['is_active']:
-            can_proceed, error_message = request.user.can_be_deactivated_or_deleted()
-            if not can_proceed:
-                return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
-        
-        serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
+        # Users cannot change their own 'is_active' status via profile update
+        if 'is_active' in request.data:
+             return Response({'error': 'Cannot change account status via profile update.'}, status=status.HTTP_400_BAD_REQUEST)
+             
+        serializer = SelfUserUpdateSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
             old_data = f"{request.user.first_name} {request.user.last_name}"
             serializer.save()

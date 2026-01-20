@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Campaign, Task
+from .models import Campaign, Event, Task
 
 
 class CampaignAdmin(admin.ModelAdmin):
@@ -14,6 +14,12 @@ class TaskAdmin(admin.ModelAdmin):
     list_filter = ('is_completed', 'due_date', 'campaign')
     search_fields = ('title', 'description', 'campaign__title')
     list_editable = ('is_completed',)
+    
+class EventAdmin(admin.ModelAdmin):
+    list_display = ('title', 'campaign', 'start_datetime', 'end_datetime')
+    list_filter = ('start_datetime', 'end_datetime', 'campaign')
+    search_fields = ('title', 'description', 'campaign__title')
 
 admin.site.register(Campaign, CampaignAdmin)
 admin.site.register(Task, TaskAdmin)
+admin.site.register(Event, EventAdmin)

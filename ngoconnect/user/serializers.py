@@ -130,14 +130,17 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = ('first_name', 'last_name', 'role', 'is_active')
     
     def validate(self, attrs):
-        """Validate that we don't deactivate the last admin"""
+        """Validate that we don't deactivate the last admin or demote the last admin"""
         user = self.instance
         
+        # Check 1: Deactivation
         if 'is_active' in attrs and not attrs['is_active'] and user.role == 'admin':
             can_proceed, error_message = user.can_be_deactivated_or_deleted()
             if not can_proceed:
                 raise serializers.ValidationError({'is_active': error_message})
         
+        # Check 2: Role Change (Demotion)
+        # If role is changing AND it was admin AND it is no longer admin
         if 'role' in attrs and attrs['role'] != 'admin' and user.role == 'admin':
             other_active_admins = User.objects.filter(
                 role='admin',
@@ -150,6 +153,16 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                 })
         
         return attrs
+
+
+class SelfUserUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for users updating their own profile.
+    Restricted to safe fields only (no role or active status changes).
+    """
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name')
 
 
 class UserListSerializer(serializers.ModelSerializer):

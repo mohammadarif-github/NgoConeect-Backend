@@ -268,6 +268,45 @@ class EventListCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class EventDetailView(APIView):
+    """
+    get: Retrieve event details.
+    delete: Cancel/Delete event (Admin/Manager only).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        return get_object_or_404(Event, pk=pk)
+
+    @extend_schema(summary="Get Event Details", responses={200: EventSerializer})
+    def get(self, request, pk):
+        event = self.get_object(pk)
+        serializer = EventSerializer(event, context={'request': request})
+        return Response(serializer.data)
+
+    @extend_schema(summary="Update Event", description="Admin/Manager can update an event.", request=EventSerializer)
+    def patch(self, request, pk):
+        if request.user.role not in ['admin', 'manager']:
+            raise PermissionDenied("Only admins/managers can update events.")
+        
+        event = self.get_object(pk)
+        serializer = EventSerializer(event, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(summary="Delete/Cancel Event", description="Admin/Manager can delete an event.")
+    def delete(self, request, pk):
+        if request.user.role not in ['admin', 'manager']:
+            raise PermissionDenied("Only admins/managers can delete events.")
+        
+        event = self.get_object(pk)
+        event.delete()
+        return Response({"message": "Event deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+
+
 class EventSignupView(APIView):
     """
     post: Volunteer signs up for an event.

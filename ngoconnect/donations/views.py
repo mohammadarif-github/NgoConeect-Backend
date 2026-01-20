@@ -113,6 +113,11 @@ class PaymentSuccessView(APIView):
                 #     donation.campaign.amount_collected += donation.amount
                 #     donation.campaign.save()
 
+                # Upgrade Role: If user is general_user, upgrade to 'donor'
+                if donation.donor and donation.donor.role == 'general_user':
+                    donation.donor.role = 'donor'
+                    donation.donor.save(update_fields=['role'])
+
                 return redirect(f"{settings.FRONTEND_URL}/donation_success/?tran_id={tran_id}") # Redirect to Frontend Success Page
             else:
                 donation.status = 'FAILED'

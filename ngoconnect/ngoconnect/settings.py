@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'volunteers',
     'projects',
     'donations',
+    'notifications',
     'rest_framework',
     'drf_spectacular',
     'django.contrib.admin',

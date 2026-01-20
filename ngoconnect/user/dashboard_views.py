@@ -57,10 +57,26 @@ class DashboardSummaryView(APIView):
             })
 
         else: # Donor, General User
-            my_donations = Donation.objects.filter(donor=request.user, status='SUCCESS').aggregate(t=Sum('amount'))['t'] or 0
+            my_donations_qs = Donation.objects.filter(donor=request.user, status='SUCCESS')
+            my_donations_total = my_donations_qs.aggregate(t=Sum('amount'))['t'] or 0
+            
+            # Badge Logic
+            badge = "None"
+            if my_donations_total > 0:
+                badge = "Bronze Donor"
+            if my_donations_total > 5000:
+                badge = "Silver Donor"
+            if my_donations_total > 20000:
+                badge = "Gold Champion"
+
             data.update({
-                "my_total_donations": my_donations,
-                "active_campaigns_count": Campaign.objects.filter(status='ACTIVE').count()
+                "my_total_donations": my_donations_total,
+                "active_campaigns_count": Campaign.objects.filter(status='ACTIVE').count(),
+                "donor_stats": {
+                    "total_donated": my_donations_total,
+                    "donation_count": my_donations_qs.count(),
+                    "impact_badge": badge
+                }
             })
 
         return Response(data)

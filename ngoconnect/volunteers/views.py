@@ -127,8 +127,18 @@ class AdminVolunteerDetailView(APIView):
         
         serializer = VolunteerReviewSerializer(data=request.data)
         if serializer.is_valid():
-            volunteer.application_status = serializer.validated_data['application_status']
+            new_status = serializer.validated_data['application_status']
+            
+            # Logic: Update status AND update User Role if Approved
+            volunteer.application_status = new_status
             volunteer.save()
+            
+            if new_status == 'APPROVED':
+                # Only update role if they are not already admin/manager (safety check)
+                if volunteer.user.role not in ['admin', 'manager']:
+                    volunteer.user.role = 'volunteer'
+                    volunteer.user.save()
+            
             return Response(VolunteerAdminSerializer(volunteer).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
