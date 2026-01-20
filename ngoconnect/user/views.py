@@ -251,7 +251,7 @@ class ProfileView(APIView):
     def patch(self, request):
         # Users cannot change their own 'is_active' status via profile update
         if 'is_active' in request.data:
-             return Response({'error': 'Cannot change account status via profile update.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Cannot change account status via profile update.'}, status=status.HTTP_400_BAD_REQUEST)
              
         serializer = SelfUserUpdateSerializer(request.user, data=request.data, partial=True)
         if serializer.is_valid():
