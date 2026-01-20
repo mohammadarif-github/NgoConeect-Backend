@@ -140,13 +140,13 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'BLACKLIST_AFTER_ACCESS_TOKEN_EXPIRE': True,
+    'BLACKLIST_AFTER_ACCESS_TOKEN_EXPIRE': True, # nosec
     'INCLUDE_JTI_CLAIM': True,
 }
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator', #nosec
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator', 
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
