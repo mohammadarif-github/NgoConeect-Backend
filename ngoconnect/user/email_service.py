@@ -1,5 +1,6 @@
 # user/email_service.py
 import logging
+import threading
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -76,8 +77,8 @@ NGOConnect Team
             return False
     
     @staticmethod
-    def send_email(to_email, subject, text_body, html_body=None):
-        """Base method to send emails."""
+    def _send_email_thread(to_email, subject, text_body, html_body):
+        """Actual sending logic running in a thread."""
         try:
             send_mail(
                 subject=subject,
@@ -88,9 +89,21 @@ NGOConnect Team
                 fail_silently=False,
             )
             logger.info(f"Email sent successfully to {to_email}")
-            return True
         except Exception as e:
             logger.error(f"Email sending failed to {to_email}: {str(e)}")
+
+    @staticmethod
+    def send_email(to_email, subject, text_body, html_body=None):
+        """Base method to send emails (Threaded)."""
+        try:
+            email_thread = threading.Thread(
+                target=EmailService._send_email_thread,
+                args=(to_email, subject, text_body, html_body)
+            )
+            email_thread.start()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start email thread for {to_email}: {str(e)}")
             return False
     
     @staticmethod

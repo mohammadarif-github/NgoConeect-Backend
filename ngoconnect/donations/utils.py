@@ -25,9 +25,9 @@ class SSLCommerzService:
             'total_amount': float(donation_instance.amount),
             'currency': "BDT",
             'tran_id': donation_instance.transaction_id,
-            'success_url': f"{settings.FRONTEND_URL}/api/donations/payment/success/", # Adjusted for backend handling usually, but here likely calling an API
-            'fail_url': f"{settings.FRONTEND_URL}/api/donations/payment/fail/",
-            'cancel_url': f"{settings.FRONTEND_URL}/api/donations/payment/cancel/",
+            'success_url': f"{settings.BACKEND_URL}/api/donations/payment/success/", # Adjusted to use BACKEND_URL
+            'fail_url': f"{settings.BACKEND_URL}/api/donations/payment/fail/",
+            'cancel_url': f"{settings.BACKEND_URL}/api/donations/payment/cancel/",
             'emi_option': 0,
             'cus_name': donation_instance.donor_name or (user_details.get('name') if user_details else 'Guest'),
             'cus_email': donation_instance.donor_email or (user_details.get('email') if user_details else 'guest@example.com'),
