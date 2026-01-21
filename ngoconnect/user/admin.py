@@ -3,8 +3,13 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 from .forms import CustomUserChangeForm, CustomUserCreationForm
-from .models import User
+from .models import EmailVerificationToken, User
 
+
+class EmailVerificationTokenAdmin(admin.ModelAdmin):
+    list_display = ('user', 'created_at', 'expires_at', 'is_used')
+    search_fields = ('user__email',)
+    list_filter = ('is_used', 'created_at')
 
 class UserAdmin(BaseUserAdmin):
     add_form = CustomUserCreationForm
@@ -31,3 +36,4 @@ class UserAdmin(BaseUserAdmin):
     search_fields = ['email', 'first_name', 'last_name']
 
 admin.site.register(User, UserAdmin)
+admin.site.register(EmailVerificationToken, EmailVerificationTokenAdmin)
