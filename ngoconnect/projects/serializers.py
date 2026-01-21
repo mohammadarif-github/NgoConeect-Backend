@@ -1,4 +1,6 @@
 # projects/serializers.py
+from decimal import Decimal
+
 from django.utils.text import slugify
 from rest_framework import serializers
 
@@ -16,7 +18,9 @@ class CampaignSerializer(serializers.ModelSerializer):
 
     def get_progress_percentage(self, obj):
         if obj.goal_amount > 0:
-            percent = (obj.current_amount / obj.goal_amount) * 100
+            current = Decimal(str(obj.current_amount)) if hasattr(obj, 'current_amount') else Decimal(0)
+            goal = Decimal(str(obj.goal_amount))
+            percent = (current / goal) * 100
             return round(percent, 2)
         return 0.0
 
