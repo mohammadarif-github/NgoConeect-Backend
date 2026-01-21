@@ -9,9 +9,6 @@ from .models import User
 
 
 class CustomUserCreationForm(UserCreationForm):
-    # Overriding the parent fields to ensure they have the correct attributes if needed,
-    # or we could just rely on the parent. But let's match the parent's field names: password1 and password2.
-    # Note: Django's UserCreationForm uses 'password1' and 'password2' (no underscores).
     
     class Meta:
         model = User
