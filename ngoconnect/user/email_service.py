@@ -1,5 +1,6 @@
 # user/email_service.py
 import logging
+import threading
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -68,11 +69,18 @@ NGOConnect Team
 </html>
             """
             
-            # Reuse your base send_email method
-            return EmailService.send_email(user_email, subject, text_body, html_body)
+            # Use threading to prevent Main Thread blocking (timeout on Render)
+            email_thread = threading.Thread(
+                target=EmailService.send_email,
+                args=(user_email, subject, text_body, html_body)
+            )
+            email_thread.start()
+            
+            # Return True immediately so the API responds "Created"
+            return True
             
         except Exception as e:
-            logger.error(f"OTP email sending failed: {str(e)}")
+            logger.error(f"OTP email processing failed: {str(e)}")
             return False
     
     @staticmethod
