@@ -93,7 +93,7 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 # print("DATABASE_URL:", DATABASE_URL)
 if DATABASE_URL:
     DATABASES = {
-        'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+        'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=0) # Set to 0 for stability in dev/docker
     }
 else:
     DATABASES = {
@@ -104,7 +104,7 @@ else:
             'USER': os.environ.get('DB_USER'),
             'PASSWORD': os.environ.get('DB_PASS'),
             'PORT': os.environ.get('DB_PORT', '5432'),
-            'CONN_MAX_AGE': 300,
+            'CONN_MAX_AGE': 0, # Set to 0 for stability in dev/docker
         }
     }
 
