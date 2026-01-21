@@ -97,9 +97,9 @@ class PaymentSuccessView(APIView):
         ssl_service = SSLCommerzService()
         if val_id:
             validation_response = ssl_service.validate_payment(val_id)
-            if validation_response['status'] == 'VALID' or validation_response['status'] == 'VALIDATED':
+            if validation_response and (validation_response.get('status') == 'VALID' or validation_response.get('status') == 'VALIDATED'):
                 donation.status = 'SUCCESS'
-                donation.payment_gateway_response = validation_response
+                donation.payment_gateway_response = validation_response or {}
                 donation.save()
                 
                 # Send Receipt
@@ -121,7 +121,7 @@ class PaymentSuccessView(APIView):
                 return redirect(f"{settings.FRONTEND_URL}/donation_success/?tran_id={tran_id}") # Redirect to Frontend Success Page
             else:
                 donation.status = 'FAILED'
-                donation.payment_gateway_response = validation_response
+                donation.payment_gateway_response = validation_response or {}
                 donation.save()
                 return redirect(f"{settings.FRONTEND_URL}/donation_fail/?tran_id={tran_id}")
         

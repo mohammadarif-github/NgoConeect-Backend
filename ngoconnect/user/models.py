@@ -38,9 +38,10 @@ class User(AbstractUser):
     ]
     
     username = None
-    email = models.EmailField(unique=True, db_index=True, max_length=255)
+    email = models.EmailField(unique=True, db_index=True, max_length=255, verbose_name="Email Address")
     first_name = models.CharField(max_length=50, blank=True)
     last_name = models.CharField(max_length=50, blank=True)
+
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='general_user')
     is_email_verified = models.BooleanField(default=False)  # NEW FIELD
     
