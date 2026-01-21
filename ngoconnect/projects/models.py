@@ -16,6 +16,7 @@ class Campaign(models.Model):
     description = models.TextField()
     
     goal_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    current_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     budget_allocated = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     start_date = models.DateField()

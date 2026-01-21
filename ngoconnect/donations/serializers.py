@@ -44,8 +44,5 @@ class DonationPublicSerializer(serializers.ModelSerializer):
         # Privacy: obscure name slightly or just first name
         name = obj.donor.first_name if obj.donor else obj.donor_name
         if not name:
-            return "Anonymous"
-        parts = name.split()
-        if len(parts) > 1:
-            return f"{parts[0]} {parts[-1][0]}."
+            return "Guest"
         return name

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Campaign, Event, Task
+from .models import Campaign, Event, EventParticipant, Task
 
 
 class CampaignAdmin(admin.ModelAdmin):
@@ -20,16 +20,15 @@ class EventAdmin(admin.ModelAdmin):
     list_filter = ('start_datetime', 'end_datetime', 'campaign')
     search_fields = ('title', 'description', 'campaign__title')
 
-admin.site.register(Campaign, CampaignAdmin)
-admin.site.register(Task, TaskAdmin)
-admin.site.register(Event, EventAdmin)
-
-from .models import EventParticipant
-
-
 class EventParticipantAdmin(admin.ModelAdmin):
     list_display = ('event', 'volunteer', 'status', 'signup_date')
     list_filter = ('status', 'event')
     search_fields = ('volunteer__email', 'event__title')
-
+    
+admin.site.register(Campaign, CampaignAdmin)
+admin.site.register(Task, TaskAdmin)
+admin.site.register(Event, EventAdmin)
 admin.site.register(EventParticipant, EventParticipantAdmin)
+
+
+

@@ -34,6 +34,7 @@ urlpatterns = [
     path("api/donations/", include('donations.urls')),
     path("api/volunteer/", include('volunteers.urls')),
     path("api/notifications/", include('notifications.urls')),
+    path("api/core/", include('core.urls')),
 ]
 
 if settings.DEBUG:

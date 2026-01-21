@@ -71,6 +71,7 @@ class VolunteerAdminSerializer(serializers.ModelSerializer):
         )
 
 
+
 class VolunteerReviewSerializer(serializers.Serializer):
     """For admin approving/rejecting volunteers."""
     application_status = serializers.ChoiceField(choices=['APPROVED', 'REJECTED'])
@@ -102,3 +103,24 @@ class TimeLogCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['volunteer'] = self.context['request'].user
         return super().create(validated_data)
+    
+class VolunteerAdminDetailSerializer(VolunteerAdminSerializer):
+    """For admin viewing detailed volunteer profile including logs and tasks."""
+    time_logs = TimeLogSerializer(source='user.time_logs', many=True, read_only=True)
+    assigned_tasks = serializers.SerializerMethodField()
+
+    class Meta(VolunteerAdminSerializer.Meta):
+        fields = VolunteerAdminSerializer.Meta.fields + ('time_logs', 'assigned_tasks')
+
+    def get_assigned_tasks(self, obj):
+        tasks = obj.user.assigned_tasks.all()
+        return [
+            {
+                'id': t.id,
+                'title': t.title,
+                'campaign': t.campaign.title,
+                'due_date': t.due_date,
+                'is_completed': t.is_completed
+            }
+            for t in tasks
+        ]
