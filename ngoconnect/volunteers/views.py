@@ -1,16 +1,19 @@
 # volunteer/views.py
 from core.permissions import IsBusinessAdmin
 from drf_spectacular.utils import OpenApiResponse, extend_schema
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from user.email_service import EmailService
+from user.models import User
 
 from .models import TimeLog, VolunteerProfile
 from .serializers import (
-    TimeLogCreateSerializer, TimeLogSerializer, VolunteerAdminSerializer,
-    VolunteerApplySerializer, VolunteerProfileSerializer,
-    VolunteerReviewSerializer, VolunteerUpdateSerializer,
+    TimeLogCreateSerializer, TimeLogSerializer, VolunteerAdminDetailSerializer,
+    VolunteerAdminSerializer, VolunteerApplySerializer,
+    VolunteerProfileSerializer, VolunteerReviewSerializer,
+    VolunteerUpdateSerializer,
 )
 
 
@@ -28,6 +31,16 @@ class VolunteerApplyView(APIView):
         serializer = VolunteerApplySerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             volunteer = serializer.save()
+            
+            # Notify Admins
+            admins = User.objects.filter(role__in=['admin', 'manager'], is_active=True).values_list('email', flat=True)
+            for admin_email in admins:
+                EmailService.send_volunteer_application_notification(
+                    applicant_name=f"{request.user.first_name} {request.user.last_name}",
+                    applicant_email=request.user.email,
+                    recipient_email=admin_email
+                )
+
             return Response(
                 VolunteerProfileSerializer(volunteer).data,
                 status=status.HTTP_201_CREATED
@@ -106,14 +119,14 @@ class AdminVolunteerDetailView(APIView):
     
     @extend_schema(
         summary="Get volunteer details (Admin)",
-        responses={200: VolunteerAdminSerializer}
+        responses={200: VolunteerAdminDetailSerializer}
     )
     def get(self, request, user_id):
         volunteer = self.get_object(user_id)
         if not volunteer:
             return Response({'error': 'Volunteer not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        return Response(VolunteerAdminSerializer(volunteer).data)
+        return Response(VolunteerAdminDetailSerializer(volunteer).data)
     
     @extend_schema(
         summary="Approve/Reject volunteer (Admin)",
@@ -138,6 +151,13 @@ class AdminVolunteerDetailView(APIView):
                 if volunteer.user.role not in ['admin', 'manager']:
                     volunteer.user.role = 'volunteer'
                     volunteer.user.save()
+            
+            # Notify Volunteer
+            EmailService.send_volunteer_status_update(
+                applicant_email=volunteer.user.email,
+                applicant_name=f"{volunteer.user.first_name} {volunteer.user.last_name}",
+                new_status=new_status
+            )
             
             return Response(VolunteerAdminSerializer(volunteer).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

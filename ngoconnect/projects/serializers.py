@@ -7,11 +7,18 @@ from .models import Campaign, Event, EventParticipant, Task
 
 class CampaignSerializer(serializers.ModelSerializer):
     created_by_name = serializers.ReadOnlyField(source='created_by.first_name')
+    progress_percentage = serializers.SerializerMethodField()
     
     class Meta:
         model = Campaign
         fields = '__all__'
-        read_only_fields = ('slug', 'created_by', 'budget_allocated')
+        read_only_fields = ('slug', 'created_by', 'budget_allocated', 'current_amount')
+
+    def get_progress_percentage(self, obj):
+        if obj.goal_amount > 0:
+            percent = (obj.current_amount / obj.goal_amount) * 100
+            return round(percent, 2)
+        return 0.0
 
     def create(self, validated_data):
         # Auto-generate unique slug
@@ -24,6 +31,12 @@ class CampaignSerializer(serializers.ModelSerializer):
                 counter += 1
             validated_data['slug'] = slug
         return super().create(validated_data)
+
+    def validate(self, attrs):
+        if attrs.get('start_date') and attrs.get('end_date'):
+            if attrs['end_date'] < attrs['start_date']:
+                raise serializers.ValidationError({"end_date": ["End date cannot be before start date."]})
+        return attrs
 
 class TaskSerializer(serializers.ModelSerializer):
     campaign_title = serializers.ReadOnlyField(source='campaign.title')

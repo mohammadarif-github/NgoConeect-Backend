@@ -328,6 +328,80 @@ NGOConnect Team
             logger.error(f"Donation receipt email sending failed: {str(e)}")
             return False
 
+    @staticmethod
+    def send_contact_notification(sender_name, sender_email, subject, message, recipient_email):
+        """Send contact us notification to admin/manager."""
+        try:
+            email_subject = f"New Contact Message: {subject}"
+            
+            text_body = f"""
+New message from the Contact Us form.
+
+Name: {sender_name}
+Email: {sender_email}
+Subject: {subject}
+
+Message:
+{message}
+            """
+            
+            return EmailService.send_email(recipient_email, email_subject, text_body)
+            
+        except Exception as e:
+            logger.error(f"Contact notification failed: {str(e)}")
+            return False
+
+    @staticmethod
+    def send_volunteer_application_notification(applicant_name, applicant_email, recipient_email):
+        """Notify admin/manager about a new volunteer application."""
+        try:
+            subject = "New Volunteer Application - NGOConnect"
+            
+            text_body = f"""
+Hello,
+
+A new volunteer application has been submitted.
+
+Name: {applicant_name}
+Email: {applicant_email}
+
+Please log in to the admin panel to review the application.
+
+Best regards,
+NGOConnect Team
+            """
+            return EmailService.send_email(recipient_email, subject, text_body)
+        except Exception as e:
+            logger.error(f"Volunteer app notification failed: {str(e)}")
+            return False
+
+    @staticmethod
+    def send_volunteer_status_update(applicant_email, applicant_name, new_status):
+        """Notify volunteer about their application status change."""
+        try:
+            subject = f"Volunteer Application Update - {new_status}"
+            
+            message_part = ""
+            if new_status == 'APPROVED':
+                message_part = "Congratulations! Your application has been approved. You can now log in and access the volunteer dashboard."
+            elif new_status == 'REJECTED':
+                message_part = "Thank you for your interest. Unfortunately, your application has been declined at this time."
+            else:
+                message_part = f"Your application status has been updated to: {new_status}"
+
+            text_body = f"""
+Hello {applicant_name},
+
+{message_part}
+
+Best regards,
+NGOConnect Team
+            """
+            return EmailService.send_email(applicant_email, subject, text_body)
+        except Exception as e:
+            logger.error(f"Volunteer status update email failed: {str(e)}")
+            return False
+
 
 # Backward compatibility alias
 class PasswordResetEmailService:

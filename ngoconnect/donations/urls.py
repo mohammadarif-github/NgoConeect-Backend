@@ -9,4 +9,5 @@ urlpatterns = [
     path('payment/cancel/', views.PaymentCancelView.as_view(), name='payment-cancel'),
     path('public/', views.PublicDonationListView.as_view(), name='donation-public-list'),
     path('admin/', views.AdminDonationListView.as_view(), name='donation-admin-list'),
+    path('admin/export/', views.ExportDonationsView.as_view(), name='donation-export-csv'),
 ]
