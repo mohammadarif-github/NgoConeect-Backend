@@ -29,6 +29,7 @@ services:
       - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
       - DATABASE_URL=${DATABASE_URL}
       - SECRET_KEY=${SECRET_KEY}
+      - BREVO_API_KEY=${BREVO_API_KEY}
     depends_on:
       - db
       - redis
@@ -59,7 +60,7 @@ services:
       - DEBUG=1
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
+      - BREVO_API_KEY=${BREVO_API_KEY}
       - db
       - redis
 

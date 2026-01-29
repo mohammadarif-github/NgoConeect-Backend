@@ -79,6 +79,14 @@ class RegistrationView(APIView):
         }
     )
     def post(self, request):
+        # Handle re-registration for unverified users
+        email = request.data.get('email')
+        if email:
+            existing_user = User.objects.filter(email=email).first()
+            if existing_user and not existing_user.is_email_verified:
+                # Delete the unverified user to allow re-registration with fresh data
+                existing_user.delete()
+
         serializer = UserCreateSerializer(data=request.data)
         if serializer.is_valid():
             try:

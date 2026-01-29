@@ -22,3 +22,5 @@ django-celery-beat>=2.5.0,<2.6.0
 django-redis>=5.0.0,<6.0.0
 gunicorn>=21.0.0
 sslcommerz-lib
+requests>=2.31.0
+
