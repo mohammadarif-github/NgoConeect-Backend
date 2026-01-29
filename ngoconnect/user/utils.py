@@ -7,7 +7,8 @@ import pyotp
 import qrcode
 import requests
 from django.conf import settings
-from django.core.mail import send_mail
+
+from .email_service import EmailService
 
 
 def send_password_reset_email(email, token, frontend_url="http://localhost:3000"):
@@ -28,13 +29,11 @@ This link expires in 1 hour.
 
 If you didn't request this, please ignore this email.
 '''
-    send_mail(
-        subject,
-        message,
-        settings.DEFAULT_FROM_EMAIL,
-        [email],
-        fail_silently=False,
-    )    
+    EmailService.send_email(
+        to_email=email,
+        subject=subject,
+        text_body=message
+    )
 
 def get_google_auth_url():
     """

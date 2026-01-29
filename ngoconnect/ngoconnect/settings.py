@@ -222,15 +222,16 @@ LOGGING = {
     },
 }
 
-# Email Configuration (Brevo)
+# Email Configuration (Brevo SMTP)
+# Using SMTP method instead of API
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp-relay.brevo.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+# IMPORTANT: This email MUST be verified in your Brevo account (Senders & IP section)
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'ngoconnect.bd@gmail.com')
-
 # Frontend URL for email links
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
